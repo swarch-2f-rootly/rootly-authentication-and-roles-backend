@@ -7,7 +7,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.ports.file_storage import FileStorage
@@ -99,10 +99,10 @@ async def upload_profile_photo(
             file_size=len(file_content)
         )
 
-        # Update user profile with photo URL
-        updated_user = await user_service.update_user_profile(
+        # Update user profile with photo filename (not URL)
+        updated_user = await user_service.update_user_profile_photo_filename(
             user_id=user_id,
-            profile_photo_url=file_url
+            profile_photo_filename=unique_filename
         )
 
         response = FileUploadResponse(
@@ -240,13 +240,13 @@ async def delete_profile_photo(
         success = await file_storage.delete_profile_photo(user_id, filename)
 
         if success:
-            # Update user profile to remove photo URL
-            await user_service.update_user_profile(user_id=user_id, profile_photo_url=None)
+            # Update user profile to remove photo filename
+            await user_service.update_user_profile_photo_filename(user_id=user_id, profile_photo_filename=None)
             logger.info("Profile photo deleted successfully", user_id=str(user_id), filename=filename)
         else:
             logger.warn("Profile photo not found in storage", user_id=str(user_id), filename=filename)
-            # Still remove URL from user profile even if file wasn't found
-            await user_service.update_user_profile(user_id=user_id, profile_photo_url=None)
+            # Still remove filename from user profile even if file wasn't found
+            await user_service.update_user_profile_photo_filename(user_id=user_id, profile_photo_filename=None)
 
         return
 
@@ -369,10 +369,111 @@ async def get_profile_photo_metadata(
     except Exception as e:
         logger.error("Get profile photo metadata error", error=str(e), user_id=str(user_id))
         raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "INTERNAL_ERROR",
+                    "message": "Failed to retrieve profile photo metadata",
+                    "timestamp": "Exception"
+                }
+            )
+
+
+@router.get("/{user_id}/photo", response_class=Response)
+async def get_profile_photo(
+    user_id: UUID,
+    current_user: dict = Depends(get_current_user_required),
+    file_storage: FileStorage = Depends(get_file_storage_dependency),
+    user_service: UserService = Depends(get_user_service_dependency),
+    logger: Logger = Depends(get_logger)
+):
+    """
+    Get a user's profile photo.
+
+    Users can view their own profile photo or admins can view any user's photo.
+    Returns the image file directly as binary content.
+    """
+    try:
+        logger.info("Getting profile photo", user_id=str(user_id), requester_id=current_user.get('id'))
+
+        # Check authorization - users can only view their own photo unless they have admin permissions
+        current_user_id = current_user.get('id')
+        if str(user_id) != current_user_id:
+            # TODO: Check if user has admin permissions
+            # For now, allow self-access only
+            logger.warn("Unauthorized photo access attempt", user_id=str(user_id), requester_id=current_user_id)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "FORBIDDEN",
+                    "message": "You can only access your own profile photo",
+                    "timestamp": "AuthorizationError"
+                }
+            )
+
+        # Get user
+        user = await user_service.get_user_by_id(user_id)
+        if not user or not user.profile_photo_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "NOT_FOUND",
+                    "message": "Profile photo not found",
+                    "timestamp": "Exception"
+                }
+            )
+
+        # Extract filename from URL
+        try:
+            filename = user.profile_photo_url.split('/')[-1]
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "INTERNAL_ERROR",
+                    "message": "Could not determine filename from profile photo URL",
+                    "timestamp": "Exception"
+                }
+            )
+
+        # Get file content
+        file_content = await file_storage.get_file_content(user_id, filename)
+
+        if not file_content:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "NOT_FOUND",
+                    "message": "Profile photo not found in storage",
+                    "timestamp": "Exception"
+                }
+            )
+
+        # Get metadata to determine content type
+        metadata = await file_storage.get_file_metadata(user_id, filename)
+        content_type = metadata.get('content_type', 'application/octet-stream') if metadata else 'application/octet-stream'
+
+        logger.info("Profile photo served successfully", user_id=str(user_id), filename=filename, size=len(file_content))
+        return Response(content=file_content, media_type=content_type)
+
+    except UserNotFoundError as e:
+        logger.warn("User not found for photo request", user_id=str(user_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "USER_NOT_FOUND",
+                "message": str(e),
+                "timestamp": "UserNotFoundError"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Get profile photo error", error=str(e), user_id=str(user_id))
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "error": "INTERNAL_ERROR",
-                "message": "Failed to retrieve profile photo metadata",
+                "message": "Failed to retrieve profile photo",
                 "timestamp": "Exception"
             }
         )

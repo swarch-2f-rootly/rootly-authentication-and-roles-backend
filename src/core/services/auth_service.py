@@ -10,7 +10,7 @@ from uuid import UUID
 
 from ..domain.auth_token import AuthToken
 from ..domain.user import User
-from ..ports.auth_service import AuthService
+from ..ports.auth_service import AuthService as AuthServiceInterface
 from ..ports.user_repository import UserRepository
 from ..ports.refresh_token_repository import RefreshTokenRepository
 from ..ports.logger import Logger
@@ -27,7 +27,7 @@ from .password_service import PasswordService
 from config.settings import get_settings
 
 
-class AuthServiceImpl(AuthService):
+class AuthService(AuthServiceInterface):
     """
     Authentication service implementation using JWT tokens and bcrypt.
     """

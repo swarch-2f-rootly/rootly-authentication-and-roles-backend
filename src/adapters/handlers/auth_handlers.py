@@ -44,14 +44,14 @@ from .dependencies import (
 
 async def get_auth_service_dependency(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Dependency injection for auth service."""
-    from core.services.auth_service_impl import AuthServiceImpl
+    from core.services.auth_service import AuthService as AuthServiceImplementation
 
     user_repo = await get_user_repository(session)
     refresh_token_repo = await get_refresh_token_repository(session)
     password_service = await get_password_service()
     logger = await get_logger()
 
-    return AuthServiceImpl(user_repo, refresh_token_repo, password_service, logger)
+    return AuthServiceImplementation(user_repo, refresh_token_repo, password_service, logger)
 
 
 async def get_logger() -> Logger:

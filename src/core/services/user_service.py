@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from ..domain.user import User
-from ..ports.user_service import UserService
+from ..ports.user_service import UserService as UserServiceInterface
 from ..ports.user_repository import UserRepository
 from ..ports.role_repository import RoleRepository
 from ..ports.logger import Logger
@@ -16,12 +16,13 @@ from ..ports.exceptions import (
     UserAlreadyExistsError,
     RoleNotFoundError,
     ValidationError,
-    InvalidCredentialsError
+    InvalidCredentialsError,
+    PasswordTooWeakError
 )
 from .password_service import PasswordService
 
 
-class UserServiceImpl(UserService):
+class UserService(UserServiceInterface):
     """
     User service implementation for managing user accounts and profiles.
     """
@@ -52,8 +53,7 @@ class UserServiceImpl(UserService):
         email: str,
         password: str,
         first_name: str,
-        last_name: str,
-        profile_photo_url: Optional[str] = None
+        last_name: str
     ) -> User:
         """
         Create a new user account.
@@ -63,7 +63,6 @@ class UserServiceImpl(UserService):
             password: User's password (will be hashed)
             first_name: User's first name
             last_name: User's last name
-            profile_photo_url: Optional profile photo URL
 
         Returns:
             Created user entity
@@ -72,6 +71,10 @@ class UserServiceImpl(UserService):
             UserAlreadyExistsError: If email already exists
             PasswordTooWeakError: If password doesn't meet requirements
             ValidationError: If input data is invalid
+
+        Note:
+            Profile photos should be managed through dedicated file upload endpoints,
+            not through user creation.
         """
         self.logger.info("Creating new user", email=email)
 
@@ -83,7 +86,7 @@ class UserServiceImpl(UserService):
                 raise UserAlreadyExistsError("Email address is already registered")
 
             # Validate password strength
-            await self.password_service.validate_password_strength(password)
+            self.password_service.validate_password_strength(password)
 
             # Hash password
             password_hash = await self.password_service.hash_password(password)
@@ -93,8 +96,7 @@ class UserServiceImpl(UserService):
                 email=email,
                 password_hash=password_hash,
                 first_name=first_name,
-                last_name=last_name,
-                profile_photo_url=profile_photo_url
+                last_name=last_name
             )
 
             # Save user
@@ -171,8 +173,7 @@ class UserServiceImpl(UserService):
         self,
         user_id: UUID,
         first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
-        profile_photo_url: Optional[str] = None
+        last_name: Optional[str] = None
     ) -> User:
         """
         Update a user's profile information.
@@ -181,7 +182,6 @@ class UserServiceImpl(UserService):
             user_id: User's unique identifier
             first_name: New first name
             last_name: New last name
-            profile_photo_url: New profile photo URL
 
         Returns:
             Updated user entity
@@ -189,8 +189,35 @@ class UserServiceImpl(UserService):
         Raises:
             UserNotFoundError: If user doesn't exist
             ValidationError: If input data is invalid
+
+        Note:
+            Profile photos should be managed through dedicated file upload endpoints,
+            not through this general profile update method.
         """
         self.logger.info("Updating user profile", user_id=str(user_id))
+
+    async def update_user_profile_photo_filename(
+        self,
+        user_id: UUID,
+        profile_photo_filename: Optional[str]
+    ) -> User:
+        """
+        Update a user's profile photo filename.
+
+        This method should only be used by file upload endpoints,
+        not by general user profile update operations.
+
+        Args:
+            user_id: User's unique identifier
+            profile_photo_filename: New profile photo filename (or None to remove)
+
+        Returns:
+            Updated user entity
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+        """
+        self.logger.info("Updating user profile photo filename", user_id=str(user_id))
 
         try:
             # Get existing user
@@ -198,24 +225,22 @@ class UserServiceImpl(UserService):
             if not user:
                 raise UserNotFoundError("User not found")
 
-            # Update profile
+            # Update profile photo filename
             user.update_profile(
-                first_name=first_name,
-                last_name=last_name,
-                profile_photo_url=profile_photo_url
+                profile_photo_filename=profile_photo_filename
             )
 
             # Save updated user
             updated_user = await self.user_repository.update(user)
 
-            self.logger.info("User profile updated successfully", user_id=str(user_id))
+            self.logger.info("User profile photo filename updated successfully", user_id=str(user_id))
             return updated_user
 
         except UserNotFoundError:
             raise
         except Exception as e:
-            self.logger.error("Update user profile error", error=str(e), user_id=str(user_id))
-            raise ValidationError("Failed to update user profile")
+            self.logger.error("Update user profile photo filename error", error=str(e), user_id=str(user_id))
+            raise
 
     async def change_user_password(
         self,
@@ -509,3 +534,67 @@ class UserServiceImpl(UserService):
         except Exception as e:
             self.logger.error("Count active users error", error=str(e))
             return 0
+
+    async def change_password(self, user_id: UUID, current_password: str, new_password: str) -> bool:
+        """
+        Change user password after validating current password.
+
+        Args:
+            user_id: User ID
+            current_password: Current password
+            new_password: New password
+
+        Returns:
+            True if password changed successfully
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
+            InvalidCredentialsError: If current password is wrong
+            PasswordTooWeakError: If new password doesn't meet requirements
+        """
+        try:
+            # Get user
+            user = await self.user_repository.find_by_id(user_id)
+            if not user:
+                raise UserNotFoundError(f"User {user_id} not found")
+
+            # Verify current password
+            if not await self.password_service.verify_password(current_password, user.password_hash):
+                raise InvalidCredentialsError("Current password is incorrect")
+
+            # Validate new password strength
+            self.password_service.validate_password_strength(new_password)
+
+            # Hash new password
+            new_password_hash = await self.password_service.hash_password(new_password)
+
+            # Update user
+            user.password_hash = new_password_hash
+            await self.user_repository.save(user)
+
+            self.logger.info("Password changed successfully", user_id=str(user_id))
+            return True
+
+        except (UserNotFoundError, InvalidCredentialsError, PasswordTooWeakError):
+            raise
+        except Exception as e:
+            self.logger.error("Change password error", error=str(e), user_id=str(user_id))
+            return False
+
+    async def list_users(self, skip: int = 0, limit: int = 10) -> List[User]:
+        """
+        List users with pagination.
+
+        Args:
+            skip: Number of users to skip
+            limit: Maximum number of users to return
+
+        Returns:
+            List of users
+        """
+        try:
+            return await self.user_repository.find_all(skip=skip, limit=limit)
+
+        except Exception as e:
+            self.logger.error("List users error", error=str(e))
+            return []

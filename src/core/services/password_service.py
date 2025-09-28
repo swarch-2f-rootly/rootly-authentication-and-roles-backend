@@ -35,6 +35,9 @@ class PasswordService:
         Returns:
             Hashed password string
         """
+        if not password:
+            raise ValueError("Password cannot be empty")
+
         try:
             # Generate salt and hash password
             salt = bcrypt.gensalt()
@@ -67,7 +70,7 @@ class PasswordService:
             self.logger.error("Failed to verify password", error=str(e))
             return False
 
-    async def validate_password_strength(self, password: str) -> bool:
+    def validate_password_strength(self, password: str) -> bool:
         """
         Validate password strength requirements.
 
@@ -177,3 +180,20 @@ class PasswordService:
         secrets.SystemRandom().shuffle(password_chars)
 
         return ''.join(password_chars)
+
+    def get_password_requirements(self) -> dict:
+        """
+        Get password requirements as a dictionary.
+
+        Returns:
+            Dictionary containing password requirements
+        """
+        return {
+            "min_length": 8,
+            "require_uppercase": True,
+            "require_lowercase": True,
+            "require_digit": True,
+            "require_special": True,
+            "special_chars": "!@#$%^&*()_+-=[]{}|;:,.<>?",
+            "description": "Password must be at least 8 characters long and contain uppercase, lowercase, digit, and special character"
+        }

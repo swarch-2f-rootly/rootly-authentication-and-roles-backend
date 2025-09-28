@@ -342,6 +342,44 @@ class MinIOStorage(FileStorage):
             self.logger.error("List user files error", error=str(e), user_id=str(user_id))
             return []
 
+    async def get_file_content(self, user_id: UUID, filename: str) -> Optional[bytes]:
+        """
+        Get the binary content of a stored file.
+
+        Args:
+            user_id: User's unique identifier
+            filename: Name of the file
+
+        Returns:
+            File content as bytes if exists, None otherwise
+        """
+        try:
+            object_name = f"uploads/{user_id}/{filename}"
+
+            # Check if object exists and get it
+            try:
+                response = self.client.get_object(self.bucket_name, object_name)
+                # Read all data from the response
+                file_data = response.read()
+                response.close()
+                response.release_conn()
+
+                self.logger.info("File content retrieved", user_id=str(user_id), filename=filename, size=len(file_data))
+                return file_data
+
+            except S3Error as e:
+                if e.code == 'NoSuchKey':
+                    self.logger.warn("File not found for content retrieval", user_id=str(user_id), filename=filename)
+                    return None
+                raise
+
+        except S3Error as e:
+            self.logger.error("MinIO get content error", error=str(e), user_id=str(user_id), filename=filename)
+            raise ExternalServiceError("MinIO", f"Failed to get file content: {str(e)}")
+        except Exception as e:
+            self.logger.error("Get file content error", error=str(e), user_id=str(user_id), filename=filename)
+            return None
+
     async def health_check(self) -> bool:
         """
         Check if the file storage service is healthy.

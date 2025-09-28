@@ -31,6 +31,10 @@ from adapters.handlers.user_handlers import router as user_router
 from adapters.handlers.role_handlers import router as role_router
 from adapters.handlers.file_handlers import router as file_router
 
+# Import services for database initialization
+from core.services.migration_service import MigrationService
+from core.services.seed_service import SeedService
+
 # Load settings
 settings = get_settings()
 
@@ -42,6 +46,44 @@ logging.getLogger("uvicorn").setLevel(logging.WARNING)
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
+async def initialize_database():
+    """Initialize database with automatic migration checking and seeding."""
+    try:
+        logger.info("🔧 Initializing database...")
+
+        # Initialize migration service
+        migration_service = MigrationService(logger)
+
+        # Check and run migrations automatically if needed
+        if not await migration_service.initialize_database():
+            logger.error("Database migration failed!")
+            raise RuntimeError("Database migration failed")
+
+        # Initialize seed service
+        seed_service = SeedService(logger)
+
+        # Run seeding
+        if not await seed_service.seed_database():
+            logger.error("Database seeding failed!")
+            raise RuntimeError("Database seeding failed")
+
+        logger.info("Database seeding completed successfully")
+
+        # Create test users in development environment
+        if settings.environment in ["development", "dev"]:
+            logger.info("Creating test users for development...")
+            await seed_service.create_test_users()
+        elif settings.debug:
+            logger.info("Creating test users for debug environment...")
+            await seed_service.create_test_users()
+
+        logger.info("Database initialization completed successfully!")
+
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -50,6 +92,9 @@ async def lifespan(app: FastAPI):
     # Startup logic
     logger.info(f"Service configured for environment: {settings.environment}")
     logger.info(f"CORS origins: {settings.cors_origins}")
+
+    # Initialize database with migrations and seeding
+    await initialize_database()
 
     yield
 

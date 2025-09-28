@@ -126,6 +126,20 @@ class FileStorage(ABC):
         pass
 
     @abstractmethod
+    async def get_file_content(self, user_id: UUID, filename: str) -> Optional[bytes]:
+        """
+        Get the binary content of a stored file.
+
+        Args:
+            user_id: User's unique identifier
+            filename: Name of the file
+
+        Returns:
+            File content as bytes if exists, None otherwise
+        """
+        pass
+
+    @abstractmethod
     async def list_user_files(self, user_id: UUID) -> list:
         """
         List all files for a user.

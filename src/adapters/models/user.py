@@ -20,7 +20,7 @@ class User(BaseModel):
     last_name = Column(String(100), nullable=False)
 
     # Profile information
-    profile_photo_url = Column(String(500))  # MinIO URL stored as string
+    profile_photo_filename = Column(String(255))  # Only filename, reconstruct URL when needed
 
     # Account status
     is_active = Column(Boolean, default=True, nullable=False, index=True)

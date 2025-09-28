@@ -11,7 +11,7 @@ class DatabaseSettings:
     """Database configuration settings."""
 
     def __init__(self):
-        self.url = os.getenv("DATABASE_URL", "postgresql+asyncpg://auth_user:auth_password123@postgres:5432/auth_db")
+        self.url = os.getenv("DATABASE_URL", "postgresql+asyncpg://auth_user:admin123@postgres:5432/auth_db")
         self.pool_size = int(os.getenv("DATABASE_POOL_SIZE", "10"))
         self.max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", "20"))
         self.pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", "30"))
@@ -23,7 +23,7 @@ class JWTSettings:
 
     def __init__(self):
         self.secret_key = os.getenv("JWT_SECRET_KEY", "test-jwt-secret-key-for-development-only-32-chars-minimum")
-        self.access_token_expire_minutes = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+        self.access_token_expire_minutes = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "240"))
         self.refresh_token_expire_days = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
         self.algorithm = "HS256"
 
@@ -33,8 +33,8 @@ class MinIOSettings:
 
     def __init__(self):
         self.endpoint = os.getenv("MINIO_ENDPOINT", "minio-auth:9000")
-        self.access_key = os.getenv("MINIO_ACCESS_KEY", "minioauth")
-        self.secret_key = os.getenv("MINIO_SECRET_KEY", "minioauth123")
+        self.access_key = os.getenv("MINIO_ACCESS_KEY", "admin")
+        self.secret_key = os.getenv("MINIO_SECRET_KEY", "admin123")
         self.bucket_name = os.getenv("MINIO_BUCKET_NAME", "user-profiles")
         self.secure = os.getenv("MINIO_SECURE", "false").lower() == "true"
 

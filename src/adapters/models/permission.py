@@ -40,8 +40,8 @@ class Permission(BaseModel):
             raise ValueError("Scope must be either 'own' or 'all'")
 
         # Permission name format validation
-        if not self.name.replace("_", "").replace("-", "").replace(".", "").isalnum():
-            raise ValueError("Permission name can only contain letters, numbers, underscores, hyphens, and dots")
+        if not self.name.replace("_", "").replace("-", "").replace(".", "").replace(":", "").isalnum():
+            raise ValueError("Permission name can only contain letters, numbers, underscores, hyphens, dots, and colons")
 
         # Resource name validation
         if not self.resource.replace("_", "").replace("-", "").isalnum():

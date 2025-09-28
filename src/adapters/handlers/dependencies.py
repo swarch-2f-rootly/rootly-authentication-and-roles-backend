@@ -15,7 +15,7 @@ from core.ports.user_service import UserService
 from core.ports.file_storage import FileStorage
 from core.ports.logger import Logger
 from core.services.password_service import PasswordService
-from core.services.user_service_impl import UserServiceImpl
+from core.services.user_service import UserService as UserServiceImplementation
 from adapters.repositories.postgres_user_repository import PostgresUserRepository
 from adapters.repositories.postgres_refresh_token_repository import PostgresRefreshTokenRepository
 from adapters.repositories.postgres_role_repository import PostgresRoleRepository
@@ -170,7 +170,7 @@ async def get_user_service(session: AsyncSession) -> UserService:
     password_service = await get_password_service()
     logger = await get_logger()
 
-    return UserServiceImpl(user_repo, role_repo, password_service, logger)
+    return UserServiceImplementation(user_repo, role_repo, password_service, logger)
 
 
 async def get_file_storage() -> FileStorage:

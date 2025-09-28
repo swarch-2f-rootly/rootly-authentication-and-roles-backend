@@ -11,6 +11,7 @@ from sqlalchemy import select, update, delete, func, and_
 from sqlalchemy.orm import selectinload
 
 from core.domain.user import User
+from core.domain.role import Role
 from core.ports.user_repository import UserRepository
 from core.ports.logger import Logger
 from core.ports.exceptions import RepositoryError
@@ -53,7 +54,7 @@ class PostgresUserRepository(UserRepository):
                 password_hash=user.password_hash,
                 first_name=user.first_name,
                 last_name=user.last_name,
-                profile_photo_url=user.profile_photo_url,
+                profile_photo_filename=user.profile_photo_filename,
                 is_active=user.is_active,
                 created_at=user.created_at,
                 updated_at=user.updated_at
@@ -251,7 +252,7 @@ class PostgresUserRepository(UserRepository):
                     password_hash=user.password_hash,
                     first_name=user.first_name,
                     last_name=user.last_name,
-                    profile_photo_url=user.profile_photo_url,
+                    profile_photo_filename=user.profile_photo_filename,
                     is_active=user.is_active,
                     updated_at=user.updated_at
                 )
@@ -470,22 +471,30 @@ class PostgresUserRepository(UserRepository):
         Returns:
             User domain entity
         """
-        # Extract roles from user model
-        roles = []
-        if user_model.user_roles:
-            for user_role in user_model.user_roles:
-                if user_role.role:
-                    # Convert role model to simple dict for domain entity
-                    roles.append(user_role.role.name)
-
-        return User(
+        # Create user entity
+        user = User(
             id=user_model.id,
             email=user_model.email,
             password_hash=user_model.password_hash,
             first_name=user_model.first_name,
             last_name=user_model.last_name,
-            profile_photo_url=user_model.profile_photo_url,
+            profile_photo_filename=user_model.profile_photo_filename,
             is_active=user_model.is_active,
             created_at=user_model.created_at,
             updated_at=user_model.updated_at
         )
+
+        # Assign roles to user entity
+        if user_model.user_roles:
+            for user_role in user_model.user_roles:
+                if user_role.role:
+                    # Convert role model to domain entity
+                    role = Role(
+                        id=user_role.role.id,
+                        name=user_role.role.name,
+                        description=user_role.role.description,
+                        created_at=user_role.role.created_at
+                    )
+                    user.assign_role(role)
+
+        return user

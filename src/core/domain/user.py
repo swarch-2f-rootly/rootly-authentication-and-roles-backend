@@ -26,7 +26,7 @@ class User:
     password_hash: str = ""
     first_name: str = ""
     last_name: str = ""
-    profile_photo_url: Optional[str] = None
+    profile_photo_filename: Optional[str] = None
 
     # Status
     is_active: bool = True
@@ -73,6 +73,17 @@ class User:
         """Get user's assigned roles."""
         return self._roles.copy()
 
+    @property
+    def profile_photo_url(self) -> Optional[str]:
+        """Get the complete profile photo URL by reconstructing it from filename."""
+        if not self.profile_photo_filename:
+            return None
+
+        # Reconstruct URL using the same pattern as MinIO
+        # This should match the format used in MinIOStorage._get_file_url
+        # For now, we'll use a simple reconstruction - in production this could be more sophisticated
+        return f"http://minio-auth:9000/user-profiles/uploads/{self.id}/{self.profile_photo_filename}"
+
     def assign_role(self, role: 'Role') -> None:
         """Assign a role to the user."""
         if role not in self._roles:
@@ -117,15 +128,15 @@ class User:
         self,
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
-        profile_photo_url: Optional[str] = None
+        profile_photo_filename: Optional[str] = None
     ) -> None:
         """Update user profile information."""
         if first_name is not None:
             self.first_name = first_name
         if last_name is not None:
             self.last_name = last_name
-        if profile_photo_url is not None:
-            self.profile_photo_url = profile_photo_url
+        if profile_photo_filename is not None:
+            self.profile_photo_filename = profile_photo_filename
 
         self.updated_at = datetime.now()
         self._validate()

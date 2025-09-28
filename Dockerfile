@@ -27,7 +27,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY src/ ./src/
 COPY scripts/ ./scripts/
-COPY .env* ./
+COPY migrations/ ./migrations/
+COPY alembic.ini ./
+COPY tests/ ./tests/
 
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser \

@@ -21,8 +21,7 @@ class UserService(ABC):
         email: str,
         password: str,
         first_name: str,
-        last_name: str,
-        profile_photo_url: Optional[str] = None
+        last_name: str
     ) -> User:
         """
         Create a new user account.
@@ -32,7 +31,6 @@ class UserService(ABC):
             password: User's password (will be hashed)
             first_name: User's first name
             last_name: User's last name
-            profile_photo_url: Optional profile photo URL
 
         Returns:
             Created user entity
@@ -41,6 +39,10 @@ class UserService(ABC):
             UserAlreadyExistsError: If email already exists
             PasswordTooWeakError: If password doesn't meet requirements
             ValidationError: If input data is invalid
+
+        Note:
+            Profile photos should be managed through dedicated file upload endpoints,
+            not through user creation.
         """
         pass
 
@@ -89,8 +91,7 @@ class UserService(ABC):
         self,
         user_id: UUID,
         first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
-        profile_photo_url: Optional[str] = None
+        last_name: Optional[str] = None
     ) -> User:
         """
         Update a user's profile information.
@@ -99,7 +100,6 @@ class UserService(ABC):
             user_id: User's unique identifier
             first_name: New first name
             last_name: New last name
-            profile_photo_url: New profile photo URL
 
         Returns:
             Updated user entity
@@ -107,6 +107,34 @@ class UserService(ABC):
         Raises:
             UserNotFoundError: If user doesn't exist
             ValidationError: If input data is invalid
+
+        Note:
+            Profile photos should be managed through dedicated file upload endpoints,
+            not through this general profile update method.
+        """
+        pass
+
+    @abstractmethod
+    async def update_user_profile_photo_filename(
+        self,
+        user_id: UUID,
+        profile_photo_filename: Optional[str]
+    ) -> User:
+        """
+        Update a user's profile photo filename.
+
+        This method should only be used by file upload endpoints,
+        not by general user profile update operations.
+
+        Args:
+            user_id: User's unique identifier
+            profile_photo_filename: New profile photo filename (or None to remove)
+
+        Returns:
+            Updated user entity
+
+        Raises:
+            UserNotFoundError: If user doesn't exist
         """
         pass
 
