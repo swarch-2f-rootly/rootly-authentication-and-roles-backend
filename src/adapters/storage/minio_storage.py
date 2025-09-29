@@ -4,7 +4,8 @@ Handles profile photo uploads and management using MinIO S3-compatible storage.
 """
 
 import os
-from typing import BinaryIO, Dict, Any, Optional
+import io
+from typing import BinaryIO, Dict, Any, Optional, Union
 from uuid import UUID
 from datetime import datetime
 import mimetypes
@@ -36,6 +37,7 @@ class MinIOStorage(FileStorage):
         """
         self.logger = logger
         self.settings = get_settings()
+        self._initialized = False
 
         # Initialize MinIO client
         self.client = Minio(
@@ -47,30 +49,51 @@ class MinIOStorage(FileStorage):
 
         self.bucket_name = self.settings.minio.bucket_name
 
-        # Ensure bucket exists
+        self.logger.debug("MinIO storage initialized", endpoint=self.settings.minio.endpoint, bucket=self.bucket_name)
+
+    def _ensure_initialized(self) -> None:
+        """Ensure MinIO is initialized and bucket exists."""
+        if self._initialized:
+            return
+
+        self.logger.debug("Ensuring MinIO initialization")
         self._ensure_bucket_exists()
+        self._initialized = True
+        self.logger.debug("MinIO initialization completed")
 
     def _ensure_bucket_exists(self) -> None:
         """Ensure the profile photos bucket exists."""
         try:
+            self.logger.debug("Checking if MinIO bucket exists", bucket=self.bucket_name)
+
             if not self.client.bucket_exists(self.bucket_name):
+                self.logger.info("Creating MinIO bucket", bucket=self.bucket_name)
                 self.client.make_bucket(self.bucket_name)
                 self.logger.info("Created MinIO bucket", bucket=self.bucket_name)
+            else:
+                self.logger.debug("MinIO bucket already exists", bucket=self.bucket_name)
+
         except S3Error as e:
-            self.logger.error("Failed to create/check MinIO bucket", error=str(e))
+            self.logger.error("Failed to create/check MinIO bucket", error=str(e), bucket=self.bucket_name)
             raise ExternalServiceError(
                 "MinIO",
                 f"Failed to initialize storage bucket: {str(e)}"
+            )
+        except Exception as e:
+            self.logger.error("Unexpected error initializing MinIO bucket", error=str(e), error_type=type(e).__name__, bucket=self.bucket_name)
+            raise ExternalServiceError(
+                "MinIO",
+                f"Unexpected error initializing storage: {str(e)}"
             )
 
     async def upload_profile_photo(
         self,
         user_id: UUID,
-        file_data: BinaryIO,
+        file_data: Union[bytes, BinaryIO],
         filename: str,
         content_type: str,
         file_size: int
-    ) -> str:
+    ) -> Dict[str, str]:
         """
         Upload a profile photo for a user.
 
@@ -90,6 +113,10 @@ class MinIOStorage(FileStorage):
             ExternalServiceError: If upload fails
         """
         try:
+            self.logger.debug("Starting profile photo upload", user_id=str(user_id), filename=filename, size=file_size)
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
             # Validate file type
             if not await self.validate_file_type(content_type, filename):
                 raise InvalidFileTypeError(self.settings.file_upload.allowed_image_types)
@@ -113,18 +140,23 @@ class MinIOStorage(FileStorage):
             }
 
             # Upload file
-            file_data.seek(0)  # Ensure we're at the beginning of the file
+            if isinstance(file_data, bytes):
+                data = io.BytesIO(file_data)
+            else:
+                data = file_data
+                data.seek(0)  # Ensure we're at the beginning of the file
+
             self.client.put_object(
                 bucket_name=self.bucket_name,
                 object_name=object_name,
-                data=file_data,
+                data=data,
                 length=file_size,
                 content_type=content_type,
                 metadata=metadata
             )
 
-            # Generate URL
-            file_url = self._get_file_url(object_name)
+            # Generate URL (service endpoint, not MinIO)
+            file_url = self._get_file_url(user_id)
 
             self.logger.info(
                 "Profile photo uploaded successfully",
@@ -133,7 +165,7 @@ class MinIOStorage(FileStorage):
                 size=file_size
             )
 
-            return file_url
+            return {"url": file_url, "filename": unique_filename}
 
         except (FileTooLargeError, InvalidFileTypeError):
             raise
@@ -156,6 +188,10 @@ class MinIOStorage(FileStorage):
             True if file was deleted, False if not found
         """
         try:
+            self.logger.debug("Starting profile photo deletion", user_id=str(user_id), filename=filename)
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
             object_name = f"uploads/{user_id}/{filename}"
 
             # Check if object exists
@@ -192,6 +228,10 @@ class MinIOStorage(FileStorage):
             URL of the profile photo if exists, None otherwise
         """
         try:
+            self.logger.debug("Getting profile photo URL", user_id=str(user_id), filename=filename)
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
             object_name = f"uploads/{user_id}/{filename}"
 
             # Check if object exists
@@ -283,6 +323,11 @@ class MinIOStorage(FileStorage):
             File metadata dictionary if exists, None otherwise
         """
         try:
+            self.logger.debug("Getting file metadata", user_id=str(user_id), filename=filename)
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
+
             object_name = f"uploads/{user_id}/{filename}"
 
             # Get object stats
@@ -319,6 +364,11 @@ class MinIOStorage(FileStorage):
             List of file information dictionaries
         """
         try:
+            self.logger.debug("Listing user files", user_id=str(user_id))
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
+
             prefix = f"uploads/{user_id}/"
             files = []
 
@@ -354,6 +404,11 @@ class MinIOStorage(FileStorage):
             File content as bytes if exists, None otherwise
         """
         try:
+            self.logger.debug("Getting file content", user_id=str(user_id), filename=filename)
+
+            # Ensure MinIO is initialized
+            self._ensure_initialized()
+
             object_name = f"uploads/{user_id}/{filename}"
 
             # Check if object exists and get it
@@ -388,12 +443,18 @@ class MinIOStorage(FileStorage):
             True if service is healthy, False otherwise
         """
         try:
+            self.logger.debug("Performing MinIO health check")
+
+            # Ensure MinIO is initialized first
+            self._ensure_initialized()
+
             # Try to list objects to check connectivity
             self.client.list_objects(self.bucket_name, max_keys=1)
+            self.logger.debug("MinIO health check passed")
             return True
 
         except Exception as e:
-            self.logger.error("MinIO health check failed", error=str(e))
+            self.logger.error("MinIO health check failed", error=str(e), error_type=type(e).__name__)
             return False
 
     async def get_storage_info(self) -> Dict[str, Any]:
@@ -404,6 +465,8 @@ class MinIOStorage(FileStorage):
             Dictionary with storage service information
         """
         try:
+            self.logger.debug("Getting storage info")
+
             # Get bucket info
             bucket_info = {
                 "endpoint": self.settings.minio.endpoint,
@@ -412,32 +475,40 @@ class MinIOStorage(FileStorage):
                 "healthy": await self.health_check()
             }
 
-            # Try to get bucket stats
-            try:
-                objects = list(self.client.list_objects(self.bucket_name))
-                bucket_info["total_objects"] = len(objects)
-            except:
+            # Try to get bucket stats (only if healthy)
+            if bucket_info["healthy"]:
+                try:
+                    # Ensure MinIO is initialized
+                    self._ensure_initialized()
+                    objects = list(self.client.list_objects(self.bucket_name))
+                    bucket_info["total_objects"] = len(objects)
+                    self.logger.debug("Storage info retrieved", total_objects=len(objects))
+                except Exception as stats_error:
+                    self.logger.warn("Could not get storage stats", error=str(stats_error))
+                    bucket_info["total_objects"] = "unknown"
+            else:
                 bucket_info["total_objects"] = "unknown"
 
             return bucket_info
 
         except Exception as e:
-            self.logger.error("Get storage info error", error=str(e))
+            self.logger.error("Get storage info error", error=str(e), error_type=type(e).__name__)
             return {"error": str(e)}
 
-    def _get_file_url(self, object_name: str) -> str:
+    def _get_file_url(self, user_id: UUID) -> str:
         """
-        Generate a file URL.
+        Generate a file URL pointing to the service endpoint.
 
         Args:
-            object_name: Object name in the bucket
+            user_id: User's unique identifier
 
         Returns:
-            File URL
+            Service endpoint URL for the file
         """
         if self.settings.minio.secure:
             protocol = "https"
         else:
             protocol = "http"
 
-        return f"{protocol}://{self.settings.minio.endpoint}/{self.bucket_name}/{object_name}"
+        # Return service endpoint URL, not MinIO URL
+        return f"{self.settings.api_base_url}/api/v1/users/{user_id}/photo"

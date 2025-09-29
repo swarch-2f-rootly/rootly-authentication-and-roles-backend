@@ -75,6 +75,7 @@ class AppSettings:
         # Server settings
         self.host = os.getenv("HOST", "0.0.0.0")
         self.port = int(os.getenv("PORT", "8000"))
+        self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8001")
 
         # CORS settings
         cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080,*")

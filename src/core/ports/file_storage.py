@@ -21,7 +21,7 @@ class FileStorage(ABC):
         filename: str,
         content_type: str,
         file_size: int
-    ) -> str:
+    ) -> Dict[str, str]:
         """
         Upload a profile photo for a user.
 
@@ -33,7 +33,7 @@ class FileStorage(ABC):
             file_size: File size in bytes
 
         Returns:
-            URL of the uploaded file
+            Dict with 'url' and 'filename' keys
 
         Raises:
             FileTooLargeError: If file exceeds size limit

@@ -72,20 +72,24 @@ async def login(
     Authenticates a user with email and password, returning access and refresh tokens.
     """
     try:
-        logger.info("Login attempt", email=request.email)
+        logger.info("Starting login process", email=request.email)
 
         # Authenticate user
+        logger.debug("Authenticating user", email=request.email)
         token_pair = await auth_service.authenticate_user(
             request.email,
             request.password
         )
+        logger.debug("User authenticated successfully", email=request.email)
 
         # Calculate expiration time for response
         expires_in = int(settings.jwt.access_token_expire_minutes * 60)
 
         # Get user info for response
+        logger.debug("Retrieving user info for response", email=request.email)
         user = await auth_service.get_current_user(token_pair.access_token)
         user_info = user.to_dict() if user else {}
+        logger.debug("User info retrieved", email=request.email, user_id=user_info.get('id'))
 
         response = TokenResponse(
             access_token=token_pair.access_token,
@@ -95,7 +99,7 @@ async def login(
             user=user_info
         )
 
-        logger.info("Login successful", email=request.email)
+        logger.info("Login completed successfully", email=request.email, user_id=user_info.get('id'))
         return response
 
     except InvalidCredentialsError as e:
@@ -152,19 +156,23 @@ async def refresh_token(
     Exchanges a valid refresh token for new access and refresh tokens.
     """
     try:
-        logger.info("Token refresh attempt")
+        logger.info("Starting token refresh process")
 
         # Refresh token
+        logger.debug("Refreshing access token")
         new_token_pair = await auth_service.refresh_access_token(
             request.refresh_token
         )
+        logger.debug("Access token refreshed successfully")
 
         # Calculate expiration time for response
         expires_in = int(settings.jwt.access_token_expire_minutes * 60)
 
         # Get user info for response
+        logger.debug("Retrieving user info for refresh response")
         user = await auth_service.get_current_user(new_token_pair.access_token)
         user_info = user.to_dict() if user else {}
+        logger.debug("User info retrieved for refresh", user_id=user_info.get('id'))
 
         response = TokenResponse(
             access_token=new_token_pair.access_token,
@@ -174,7 +182,7 @@ async def refresh_token(
             user=user_info
         )
 
-        logger.info("Token refresh successful")
+        logger.info("Token refresh completed successfully", user_id=user_info.get('id'))
         return response
 
     except InvalidTokenError as e:
@@ -221,19 +229,20 @@ async def logout(
     Revokes the provided refresh token.
     """
     try:
-        logger.info("Logout attempt")
+        logger.info("Starting logout process")
 
         # Revoke refresh token
+        logger.debug("Revoking refresh token")
         success = await auth_service.revoke_refresh_token(request.refresh_token)
 
         if success:
-            logger.info("Logout successful")
+            logger.info("Logout completed successfully")
             return {
                 "message": "Successfully logged out",
                 "success": True
             }
         else:
-            logger.warn("Logout failed: token not found")
+            logger.warn("Logout failed: token not found or already revoked")
             return {
                 "message": "Token not found or already revoked",
                 "success": False
@@ -263,15 +272,18 @@ async def validate_token(
     Validates an access token and returns token payload if valid.
     """
     try:
-        logger.info("Token validation attempt")
+        logger.info("Starting token validation process")
 
         # Extract token
         token = credentials.credentials
+        logger.debug("Token extracted from credentials")
 
         # Validate token
+        logger.debug("Validating access token")
         payload = await auth_service.validate_access_token(token)
 
-        logger.info("Token validation successful")
+        logger.debug("Token validation completed", user_id=payload.get('sub'))
+        logger.info("Token validation successful", user_id=payload.get('sub'))
         return {
             "valid": True,
             "payload": payload,
@@ -321,17 +333,26 @@ async def get_current_user_optional(
     Returns user info if token is valid, None if no token or invalid token.
     """
     if not credentials:
+        logger.debug("No credentials provided for optional authentication")
         return None
 
     try:
+        logger.debug("Extracting token from optional credentials")
         token = credentials.credentials
+
+        logger.debug("Retrieving current user from optional token")
         user = await auth_service.get_current_user(token)
 
         if user:
-            return user.to_dict()
+            user_dict = user.to_dict()
+            logger.debug("Optional user authentication successful", user_id=user_dict.get('id'), email=user_dict.get('email'))
+            return user_dict
+
+        logger.debug("No user found for optional token")
         return None
 
-    except Exception:
+    except Exception as e:
+        logger.debug("Optional user authentication failed", error=str(e))
         return None
 
 
@@ -346,10 +367,14 @@ async def get_current_user_required(
     Returns user info if token is valid, raises HTTPException if not.
     """
     try:
+        logger.debug("Extracting token from credentials")
         token = credentials.credentials
+
+        logger.debug("Retrieving current user from token")
         user = await auth_service.get_current_user(token)
 
         if not user:
+            logger.warn("User not found for valid token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={
@@ -359,12 +384,14 @@ async def get_current_user_required(
                 }
             )
 
-        return user.to_dict()
+        user_dict = user.to_dict()
+        logger.debug("Current user retrieved successfully", user_id=user_dict.get('id'), email=user_dict.get('email'))
+        return user_dict
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Get current user error", error=str(e))
+        logger.error("Get current user error", error=str(e), error_type=type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

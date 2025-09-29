@@ -122,16 +122,25 @@ class UserService(UserServiceInterface):
             User entity if found, None otherwise
         """
         try:
+            self.logger.debug("Starting get_user_by_id", user_id=str(user_id))
+
             user = await self.user_repository.find_by_id(user_id)
+            self.logger.debug("Repository find_by_id returned", user_found=user is not None, user_id=str(user_id))
+
             if user:
+                self.logger.debug("User found, loading roles", user_id=str(user_id), user_email=user.email)
                 # Load user roles
                 user_roles = await self.user_repository.get_user_roles(user_id)
+                self.logger.debug("User roles loaded", user_id=str(user_id), roles_count=len(user_roles) if user_roles else 0)
                 # Note: In a full implementation, you'd populate the user's roles here
+            else:
+                self.logger.debug("User not found in repository", user_id=str(user_id))
 
+            self.logger.debug("get_user_by_id completed", user_id=str(user_id), success=user is not None)
             return user
 
         except Exception as e:
-            self.logger.error("Get user by ID error", error=str(e), user_id=str(user_id))
+            self.logger.error("Get user by ID error", error=str(e), error_type=type(e).__name__, user_id=str(user_id), traceback=__import__('traceback').format_exc())
             return None
 
     async def get_user_by_email(self, email: str) -> Optional[User]:
@@ -194,7 +203,34 @@ class UserService(UserServiceInterface):
             Profile photos should be managed through dedicated file upload endpoints,
             not through this general profile update method.
         """
-        self.logger.info("Updating user profile", user_id=str(user_id))
+        self.logger.info("Updating user profile", user_id=str(user_id), first_name=first_name, last_name=last_name)
+
+        try:
+            # Get existing user
+            user = await self.user_repository.find_by_id(user_id)
+            if not user:
+                self.logger.warn("User not found for profile update", user_id=str(user_id))
+                raise UserNotFoundError("User not found")
+
+            self.logger.debug("User found for update", user_id=str(user_id), current_first_name=user.first_name, current_last_name=user.last_name)
+
+            # Update user profile
+            user.update_profile(
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            # Save updated user
+            updated_user = await self.user_repository.update(user)
+
+            self.logger.info("User profile updated successfully", user_id=str(user_id), new_first_name=first_name, new_last_name=last_name)
+            return updated_user
+
+        except UserNotFoundError:
+            raise
+        except Exception as e:
+            self.logger.error("Update user profile error", error=str(e), error_type=type(e).__name__, user_id=str(user_id), traceback=__import__('traceback').format_exc())
+            raise ValidationError("Failed to update user profile")
 
     async def update_user_profile_photo_filename(
         self,

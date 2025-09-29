@@ -75,14 +75,12 @@ class User:
 
     @property
     def profile_photo_url(self) -> Optional[str]:
-        """Get the complete profile photo URL by reconstructing it from filename."""
+        """Get the complete profile photo URL pointing to the service endpoint."""
         if not self.profile_photo_filename:
             return None
 
-        # Reconstruct URL using the same pattern as MinIO
-        # This should match the format used in MinIOStorage._get_file_url
-        # For now, we'll use a simple reconstruction - in production this could be more sophisticated
-        return f"http://minio-auth:9000/user-profiles/uploads/{self.id}/{self.profile_photo_filename}"
+        # Return service endpoint URL for client access
+        return f"http://localhost:8001/api/v1/users/{self.id}/photo"
 
     def assign_role(self, role: 'Role') -> None:
         """Assign a role to the user."""

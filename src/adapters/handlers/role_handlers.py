@@ -52,17 +52,24 @@ async def list_roles(
     Returns roles with their associated permissions for role-based access control.
     """
     try:
-        logger.info("Listing all roles", requester_id=current_user.get('id'))
+        logger.info("Starting role listing process", requester_id=current_user.get('id'))
 
         # Get all roles
+        logger.debug("Retrieving all roles from repository")
         roles = await role_repo.find_all()
+        logger.debug("Roles retrieved from repository", role_count=len(roles))
+
+        logger.debug("Counting total roles")
         total = await role_repo.count()
+        logger.debug("Total roles counted", total=total)
 
         role_responses = []
         for role in roles:
+            logger.debug("Processing role permissions", role_id=str(role.id), role_name=role.name)
             # Get permissions for this role
             permissions = await role_repo.get_role_permissions(role.id)
             permission_count = len(permissions)
+            logger.debug("Role permissions retrieved", role_id=str(role.id), permission_count=permission_count)
 
             role_responses.append(RoleResponse(
                 id=role.id,
@@ -78,7 +85,7 @@ async def list_roles(
             total=total
         )
 
-        logger.info("Roles listed successfully", count=len(role_responses), total=total)
+        logger.info("Roles listed successfully", count=len(role_responses), total=total, requester_id=current_user.get('id'))
         return response
 
     except Exception as e:
@@ -105,21 +112,29 @@ async def list_permissions(
     Returns all permissions in the system for reference.
     """
     try:
-        logger.info("Listing all permissions", requester_id=current_user.get('id'))
+        logger.info("Starting permission listing process", requester_id=current_user.get('id'))
 
         # Get all permissions
+        logger.debug("Retrieving all permissions from repository")
         permissions = await permission_repo.find_all()
+        logger.debug("Permissions retrieved from repository", permission_count=len(permissions))
+
+        logger.debug("Counting total permissions")
         total = await permission_repo.count()
+        logger.debug("Total permissions counted", total=total)
 
         permission_responses = []
         for permission in permissions:
+            full_name = getattr(permission, 'full_name', f"{permission.resource}:{permission.action}:{permission.scope}")
+            logger.debug("Processing permission", permission_id=str(permission.id), permission_name=permission.name, full_name=full_name)
+
             permission_responses.append(PermissionResponse(
                 id=permission.id,
                 name=permission.name,
                 resource=permission.resource,
                 action=permission.action,
                 scope=permission.scope,
-                full_name=getattr(permission, 'full_name', f"{permission.resource}:{permission.action}:{permission.scope}"),
+                full_name=full_name,
                 created_at=permission.created_at
             ))
 
@@ -128,7 +143,7 @@ async def list_permissions(
             total=total
         )
 
-        logger.info("Permissions listed successfully", count=len(permission_responses), total=total)
+        logger.info("Permissions listed successfully", count=len(permission_responses), total=total, requester_id=current_user.get('id'))
         return response
 
     except Exception as e:
@@ -157,16 +172,22 @@ async def get_role(
         role_id: UUID of the role to retrieve
     """
     try:
-        logger.info("Getting role details", role_id=str(role_id), requester_id=current_user.get('id'))
+        logger.info("Starting role retrieval process", role_id=str(role_id), requester_id=current_user.get('id'))
 
         # Get role
+        logger.debug("Retrieving role from repository", role_id=str(role_id))
         role = await role_repo.find_by_id(role_id)
         if not role:
+            logger.warn("Role not found in repository", role_id=str(role_id))
             raise RoleNotFoundError(f"Role with ID {role_id} not found")
 
+        logger.debug("Role found", role_id=str(role.id), role_name=role.name)
+
         # Get permissions for this role
+        logger.debug("Retrieving role permissions", role_id=str(role.id))
         permissions = await role_repo.get_role_permissions(role.id)
         permission_count = len(permissions)
+        logger.debug("Role permissions retrieved", role_id=str(role.id), permission_count=permission_count)
 
         response = RoleResponse(
             id=role.id,
@@ -177,7 +198,7 @@ async def get_role(
             created_at=role.created_at
         )
 
-        logger.info("Role details retrieved successfully", role_id=str(role_id))
+        logger.info("Role details retrieved successfully", role_id=str(role_id), role_name=role.name, permission_count=permission_count, requester_id=current_user.get('id'))
         return response
 
     except RoleNotFoundError as e:
@@ -216,11 +237,13 @@ async def get_permission(
         permission_id: UUID of the permission to retrieve
     """
     try:
-        logger.info("Getting permission details", permission_id=str(permission_id), requester_id=current_user.get('id'))
+        logger.info("Starting permission retrieval process", permission_id=str(permission_id), requester_id=current_user.get('id'))
 
         # Get permission
+        logger.debug("Retrieving permission from repository", permission_id=str(permission_id))
         permission = await permission_repo.find_by_id(permission_id)
         if not permission:
+            logger.warn("Permission not found in repository", permission_id=str(permission_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -230,17 +253,20 @@ async def get_permission(
                 }
             )
 
+        full_name = getattr(permission, 'full_name', f"{permission.resource}:{permission.action}:{permission.scope}")
+        logger.debug("Permission found", permission_id=str(permission.id), permission_name=permission.name, full_name=full_name)
+
         response = PermissionResponse(
             id=permission.id,
             name=permission.name,
             resource=permission.resource,
             action=permission.action,
             scope=permission.scope,
-            full_name=getattr(permission, 'full_name', f"{permission.resource}:{permission.action}:{permission.scope}"),
+            full_name=full_name,
             created_at=permission.created_at
         )
 
-        logger.info("Permission details retrieved successfully", permission_id=str(permission_id))
+        logger.info("Permission details retrieved successfully", permission_id=str(permission_id), permission_name=permission.name, full_name=full_name, requester_id=current_user.get('id'))
         return response
 
     except HTTPException:

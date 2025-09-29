@@ -56,8 +56,8 @@ async def upload_profile_photo(
     Users can upload their own profile photo or admins can upload for any user.
     """
     try:
-        logger.info("Uploading profile photo", user_id=str(user_id),
-                   filename=file.filename, requester_id=current_user.get('id'))
+        logger.info("Starting profile photo upload", user_id=str(user_id),
+                   filename=file.filename, content_type=file.content_type, requester_id=current_user.get('id'))
 
         # Check authorization - users can only upload their own photo unless they have admin permissions
         current_user_id = current_user.get('id')
@@ -80,30 +80,43 @@ async def upload_profile_photo(
 
         # Read file content
         file_content = await file.read()
+        file_size = len(file_content)
+        logger.debug("File content read", file_size=file_size)
 
         # Validate file size
-        if not file_storage.validate_file_size(len(file_content)):
+        logger.debug("Validating file size", file_size=file_size)
+        if not await file_storage.validate_file_size(file_size):
+            logger.warn("File size validation failed", file_size=file_size)
             raise FileTooLargeError("File size exceeds maximum allowed limit")
 
         # Validate file type
         content_type = file.content_type or "application/octet-stream"
-        if not file_storage.validate_file_type(content_type, file.filename):
+        logger.debug("Validating file type", content_type=content_type, filename=file.filename)
+
+        if not await file_storage.validate_file_type(content_type, file.filename):
+            logger.warn("File type validation failed", content_type=content_type, filename=file.filename)
             raise InvalidFileTypeError("File type not allowed for profile photos")
 
         # Upload file
-        file_url = await file_storage.upload_profile_photo(
+        logger.debug("Calling file storage upload", user_id=str(user_id))
+        upload_result = await file_storage.upload_profile_photo(
             user_id=user_id,
             file_data=file_content,
             filename=file.filename,
             content_type=content_type,
-            file_size=len(file_content)
+            file_size=file_size
         )
+        file_url = upload_result["url"]
+        unique_filename = upload_result["filename"]
+        logger.info("File uploaded to storage", user_id=str(user_id), file_url=file_url, filename=unique_filename)
 
         # Update user profile with photo filename (not URL)
+        logger.debug("Updating user profile with photo filename", user_id=str(user_id), filename=unique_filename)
         updated_user = await user_service.update_user_profile_photo_filename(
             user_id=user_id,
             profile_photo_filename=unique_filename
         )
+        logger.debug("User profile updated with photo filename", user_id=str(user_id))
 
         response = FileUploadResponse(
             filename=file.filename,
@@ -194,7 +207,7 @@ async def delete_profile_photo(
     Users can delete their own profile photo or admins can delete any user's photo.
     """
     try:
-        logger.info("Deleting profile photo", user_id=str(user_id), requester_id=current_user.get('id'))
+        logger.info("Starting profile photo deletion", user_id=str(user_id), requester_id=current_user.get('id'))
 
         # Check authorization - users can only delete their own photo unless they have admin permissions
         current_user_id = current_user.get('id')
@@ -212,41 +225,38 @@ async def delete_profile_photo(
             )
 
         # Get user to find current photo filename
+        logger.debug("Retrieving user to check current photo", user_id=str(user_id))
         user = await user_service.get_user_by_id(user_id)
         if not user:
+            logger.warn("User not found for photo deletion", user_id=str(user_id))
             raise UserNotFoundError(f"User with ID {user_id} not found")
 
         if not user.profile_photo_url:
             # No photo to delete, consider it successful
-            logger.info("No profile photo to delete", user_id=str(user_id))
+            logger.info("No profile photo to delete for user", user_id=str(user_id))
             return
 
-        # Extract filename from URL (this is a simple approach - in production you might want to store filename separately)
-        # Assuming URL format: http://minio:9000/bucket/user_id/filename
-        try:
-            filename = user.profile_photo_url.split('/')[-1]  # Get last part of URL
-        except:
-            logger.warn("Could not extract filename from URL", user_id=str(user_id), url=user.profile_photo_url)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": "INTERNAL_ERROR",
-                    "message": "Could not determine filename from profile photo URL",
-                    "timestamp": "Exception"
-                }
-            )
+        # Get filename from user profile
+        filename = user.profile_photo_filename
+        if not filename:
+            logger.info("No profile photo to delete for user", user_id=str(user_id))
+            return
+        logger.debug("Using filename from user profile", user_id=str(user_id), filename=filename)
 
         # Delete file from storage
+        logger.debug("Calling file storage to delete photo", user_id=str(user_id), filename=filename)
         success = await file_storage.delete_profile_photo(user_id, filename)
 
         if success:
             # Update user profile to remove photo filename
+            logger.debug("Updating user profile to remove photo filename", user_id=str(user_id))
             await user_service.update_user_profile_photo_filename(user_id=user_id, profile_photo_filename=None)
-            logger.info("Profile photo deleted successfully", user_id=str(user_id), filename=filename)
+            logger.info("Profile photo deleted successfully", user_id=str(user_id), filename=filename, requester_id=current_user.get('id'))
         else:
             logger.warn("Profile photo not found in storage", user_id=str(user_id), filename=filename)
             # Still remove filename from user profile even if file wasn't found
             await user_service.update_user_profile_photo_filename(user_id=user_id, profile_photo_filename=None)
+            logger.info("User profile updated to remove photo reference", user_id=str(user_id), requester_id=current_user.get('id'))
 
         return
 
@@ -288,7 +298,7 @@ async def get_profile_photo_metadata(
     Users can view metadata of their own profile photo or admins can view any user's photo metadata.
     """
     try:
-        logger.info("Getting profile photo metadata", user_id=str(user_id), requester_id=current_user.get('id'))
+        logger.info("Starting profile photo metadata retrieval", user_id=str(user_id), requester_id=current_user.get('id'))
 
         # Check authorization - users can only view their own photo metadata unless they have admin permissions
         current_user_id = current_user.get('id')
@@ -306,8 +316,10 @@ async def get_profile_photo_metadata(
             )
 
         # Get user
+        logger.debug("Retrieving user for photo metadata", user_id=str(user_id))
         user = await user_service.get_user_by_id(user_id)
         if not user or not user.profile_photo_url:
+            logger.warn("User or profile photo not found", user_id=str(user_id), has_user=user is not None, has_photo_url=bool(user.profile_photo_url if user else False))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -317,23 +329,26 @@ async def get_profile_photo_metadata(
                 }
             )
 
-        # Extract filename from URL
-        try:
-            filename = user.profile_photo_url.split('/')[-1]
-        except:
+        # Get filename from user profile
+        filename = user.profile_photo_filename
+        if not filename:
+            logger.warn("No profile photo filename found", user_id=str(user_id))
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail={
-                    "error": "INTERNAL_ERROR",
-                    "message": "Could not determine filename from profile photo URL",
+                    "error": "NOT_FOUND",
+                    "message": "Profile photo not found",
                     "timestamp": "Exception"
                 }
             )
+        logger.debug("Using filename from user profile", user_id=str(user_id), filename=filename)
 
         # Get file metadata
+        logger.debug("Retrieving file metadata from storage", user_id=str(user_id), filename=filename)
         metadata = await file_storage.get_file_metadata(user_id, filename)
 
         if not metadata:
+            logger.warn("File metadata not found in storage", user_id=str(user_id), filename=filename)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -343,6 +358,7 @@ async def get_profile_photo_metadata(
                 }
             )
 
+        logger.debug("File metadata retrieved", user_id=str(user_id), filename=filename, size=metadata.get('size', 0))
         response = FileMetadataResponse(
             filename=filename,
             size=metadata.get('size', 0),
@@ -351,7 +367,7 @@ async def get_profile_photo_metadata(
             url=user.profile_photo_url
         )
 
-        logger.info("Profile photo metadata retrieved successfully", user_id=str(user_id), filename=filename)
+        logger.info("Profile photo metadata retrieved successfully", user_id=str(user_id), filename=filename, size=metadata.get('size', 0), requester_id=current_user.get('id'))
         return response
 
     except UserNotFoundError as e:
@@ -393,7 +409,7 @@ async def get_profile_photo(
     Returns the image file directly as binary content.
     """
     try:
-        logger.info("Getting profile photo", user_id=str(user_id), requester_id=current_user.get('id'))
+        logger.info("Starting profile photo retrieval", user_id=str(user_id), requester_id=current_user.get('id'))
 
         # Check authorization - users can only view their own photo unless they have admin permissions
         current_user_id = current_user.get('id')
@@ -411,8 +427,10 @@ async def get_profile_photo(
             )
 
         # Get user
+        logger.debug("Retrieving user for photo retrieval", user_id=str(user_id))
         user = await user_service.get_user_by_id(user_id)
-        if not user or not user.profile_photo_url:
+        if not user or not user.profile_photo_filename:
+            logger.warn("User or profile photo not found", user_id=str(user_id), has_user=user is not None, has_photo_filename=bool(user.profile_photo_filename if user else False))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -422,23 +440,26 @@ async def get_profile_photo(
                 }
             )
 
-        # Extract filename from URL
-        try:
-            filename = user.profile_photo_url.split('/')[-1]
-        except:
+        # Get filename from user profile
+        filename = user.profile_photo_filename
+        if not filename:
+            logger.warn("No profile photo filename found", user_id=str(user_id))
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail={
-                    "error": "INTERNAL_ERROR",
-                    "message": "Could not determine filename from profile photo URL",
+                    "error": "NOT_FOUND",
+                    "message": "Profile photo not found",
                     "timestamp": "Exception"
                 }
             )
+        logger.debug("Using filename from user profile", user_id=str(user_id), filename=filename)
 
         # Get file content
+        logger.debug("Retrieving file content from storage", user_id=str(user_id), filename=filename)
         file_content = await file_storage.get_file_content(user_id, filename)
 
         if not file_content:
+            logger.warn("File content not found in storage", user_id=str(user_id), filename=filename)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -449,10 +470,11 @@ async def get_profile_photo(
             )
 
         # Get metadata to determine content type
+        logger.debug("Retrieving file metadata for content type", user_id=str(user_id), filename=filename)
         metadata = await file_storage.get_file_metadata(user_id, filename)
         content_type = metadata.get('content_type', 'application/octet-stream') if metadata else 'application/octet-stream'
 
-        logger.info("Profile photo served successfully", user_id=str(user_id), filename=filename, size=len(file_content))
+        logger.info("Profile photo served successfully", user_id=str(user_id), filename=filename, size=len(file_content), content_type=content_type, requester_id=current_user.get('id'))
         return Response(content=file_content, media_type=content_type)
 
     except UserNotFoundError as e:
