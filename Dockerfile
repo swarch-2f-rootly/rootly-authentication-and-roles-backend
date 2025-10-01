@@ -31,6 +31,14 @@ COPY migrations/ ./migrations/
 COPY alembic.ini ./
 COPY tests/ ./tests/
 
+# Normalize line endings and ensure entrypoint is executable
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends dos2unix \
+    && dos2unix /app/scripts/docker-entrypoint.sh \
+    && chmod +x /app/scripts/docker-entrypoint.sh \
+    && apt-get purge -y dos2unix && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser \
     && chown -R appuser:appuser /app
@@ -43,5 +51,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the entrypoint script
-ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
+# Run the entrypoint with sh to avoid bash dependency
+ENTRYPOINT ["sh", "/app/scripts/docker-entrypoint.sh"]
