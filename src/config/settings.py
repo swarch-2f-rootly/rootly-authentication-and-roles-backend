@@ -11,7 +11,7 @@ class DatabaseSettings:
     """Database configuration settings."""
 
     def __init__(self):
-        self.url = os.getenv("DATABASE_URL", "postgresql+asyncpg://auth_user:admin123@postgres:5432/auth_db")
+        self.url = os.getenv("DATABASE_URL", "postgresql+asyncpg://admin:admin123@db-authentication-and-roles:5432/authentication_and_roles_db")
         self.pool_size = int(os.getenv("DATABASE_POOL_SIZE", "10"))
         self.max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", "20"))
         self.pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", "30"))
@@ -32,7 +32,7 @@ class MinIOSettings:
     """MinIO object storage configuration settings."""
 
     def __init__(self):
-        self.endpoint = os.getenv("MINIO_ENDPOINT", "minio-auth:9000")
+        self.endpoint = os.getenv("MINIO_ENDPOINT", "stg-authentication-and-roles:9000")
         self.access_key = os.getenv("MINIO_ACCESS_KEY", "admin")
         self.secret_key = os.getenv("MINIO_SECRET_KEY", "admin123")
         self.bucket_name = os.getenv("MINIO_BUCKET_NAME", "user-profiles")
